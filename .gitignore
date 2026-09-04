@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.pytest_cache/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# uv build artifacts
+build/
+dist/
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Training / inference artifacts (large; regeneratable)
+artifacts/cache_*/
+artifacts/checkpoints/
+artifacts/checkpoints_v2/
+artifacts/*.pt
+artifacts/*.npz
+artifacts/tb_*/
+artifacts/logs/
+artifacts/submissions/
+tmp/
+*.log
+
+# Raw data (external)
+data_raw/
+
+# Experiments folder — its contents are unmaintained
+experiments/legacy_artifacts/
+experiments/legacy_logs/
+experiments/rangeview_originals/
+
+# Codabench outputs
+submission_*.zip
