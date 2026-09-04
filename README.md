@@ -15,7 +15,43 @@ Best test-set mAP achieved: **0.8524** (V=0.8646, B=0.8198, P=0.8727) via per-cl
 uv sync
 ```
 
-Requires Python 3.12+.  All dependencies are pinned in `uv.lock`.
+Requires **Python 3.12** (`requires-python = ">=3.12,<3.13"`). `uv sync` will
+fetch 3.12 if your system Python is newer. All dependencies are pinned in `uv.lock`.
+
+This snapshot is **code + scoring + starting kit**. It does not ship trained
+checkpoints, prediction caches, or the `experiments/` session log. Those live
+under `artifacts/` (gitignored) and must be rebuilt or supplied separately.
+
+## Data and caches
+
+Raw challenge data is **not** in the repo. Download the HuggingFace segments
+from [`sberrio/Mixed-Signals-V2X`](https://huggingface.co/datasets/sberrio/Mixed-Signals-V2X)
+and extract so `data_raw/` has `PointClouds/`, `Odometry/`, `labels/` (train)
+and the anonymised `f_<hex>/` frame folders (test). Then:
+
+```bash
+# Train/val range-image cache (names frames seq{N}_idx{M}.npz)
+uv run python -m rangeview.data.caches.build_train \
+  --root data_raw --out artifacts/cache_train
+
+# Test cache (UUID frame folders)
+uv run python -m rangeview.data.caches.build_test \
+  --frames-dir data_raw/test --out artifacts/cache_test_full
+
+# Optional: used only if you train with --geometry
+uv run python -m rangeview.data.caches.build_ground_map \
+  --cache artifacts/cache_train \
+  --test-cache artifacts/cache_test_full \
+  --out artifacts/ground_map.npz
+uv run python -m rangeview.data.caches.build_sensor_origins \
+  --cache artifacts/cache_train --out artifacts/sensor_origins.npz
+uv run python -m rangeview.data.caches.build_sensor_origins \
+  --cache artifacts/cache_test_full --out artifacts/sensor_origins_test.npz
+```
+
+Without these caches, `scripts/train.sh` / `infer.sh` / `evaluate.sh` exit with
+`FileNotFoundError: no cached frames`. That is expected — they do not download
+data.
 
 ## Repository layout
 
@@ -62,20 +98,10 @@ Requires Python 3.12+.  All dependencies are pinned in `uv.lock`.
 │   ├── infer.sh
 │   ├── evaluate.sh
 │   └── build_submission.sh
-├── artifacts/               # trained checkpoints + caches + refiners
-│   ├── checkpoints/         # main models
-│   ├── checkpoints_v2/      # continued-training checkpoint
-│   ├── cache_train/         # RangeViewDataset cache — training
-│   ├── cache_test_full/     # RangeViewDataset cache — test
-│   ├── ground_map.npz       # static ground surface (built once)
-│   ├── sensor_origins*.npz  # per-frame sensor positions
-│   ├── refiner_ckpts.pt     # Bike refiner
-│   ├── refiner_ckpts_2x.pt  # Vehicle refiner
-│   └── test_preds_*.pt      # cached forward passes at 1024 / 512 azimuth
+├── artifacts/               # gitignored — rebuild caches / supply checkpoints
 ├── data_raw/                # raw challenge data (external, not tracked)
-├── devkit_sources/          # challenge devkit
-├── scoring_program/         # Codabench-provided official scorer
-└── experiments/             # everything discarded — see experiments_done.md
+├── devkit_sources/          # challenge starting kit
+└── scoring_program/         # Codabench-provided official scorer
 ```
 
 ---
@@ -87,10 +113,11 @@ Trains a range-view fusion network (GroupNorm throughout — BN destroys inferen
 ```bash
 scripts/train.sh \
   --epochs 14 --optimizer adamw --lr 7e-4 --lr-decay 0.8 --warmup-epochs 1 \
-  --no-vfe --no-iou-head --no-residuals
+  --no-vfe --no-iou-head --no-residuals \
+  --val-scenes 31 34
 ```
 
-This is the recipe behind the **0.8424** single-model test score.  Val is held out on scenes 31 + 34.
+This is the recipe behind the **0.8424** single-model test score. `--val-scenes 31 34` is required for that split — the defaults train on every cached scene. `--no-vfe` is required: PillarVFE is not shipped.
 
 ## Inference
 
@@ -116,7 +143,7 @@ Repeat `scripts/infer.sh` for each checkpoint whose predictions you want to fuse
 
 ## Evaluation
 
-Runs the OFFICIAL frame-wise scorer.  Do not trust any evaluator that sorts detections globally — see the notes on the two broken evaluators in `experiments/experiments_done.md`.
+Runs the OFFICIAL frame-wise scorer. Do not trust any evaluator that sorts detections globally — the official program (`scoring_program/scoring.py`) concatenates per-frame PR, it does not sort the whole set by score.
 
 ```bash
 scripts/evaluate.sh \
@@ -167,7 +194,7 @@ uv run python -m rangeview.submission.hybrid \
 - **The score-metric is per-frame PR**: monotone rescaling of scores (Platt, isotonic, temperature) is a mathematical no-op.  Do not spend time on it.
 - **Ped>Bike NMS is a class-priority rule**, not a duplicate-removal step: annotators tag mixed pedestrian+bike scenes as pedestrians, so a Bike prediction overlapping a Pedestrian prediction is almost always a false positive.
 
-For everything ruled out (multi-model ensembling that hurt, TTA that helped only Y-flip, PillarVFE, per-frame count heads, learned FP filters), see `experiments/experiments_done.md`.
+Ruled out on the original session (not in this snapshot): multi-model ensembling that hurt, TTA other than Y-flip, PillarVFE, per-frame count heads, and score-only recalibration (a no-op under per-frame PR).
 
 ## Data flow (winning submission)
 
@@ -191,12 +218,4 @@ train pred+features ─► refiner.refiner train ─► refiner_ckpts_*.pt  ─�
                                                               submission.zip
 ```
 
-## What lives in `experiments/`
-
-- `experiments_done.md` — full session log (renamed from HANDOFF.md), covering the 0.5959 → 0.7903 → 0.8424 → 0.8524 progression + every ruled-out idea
-- `FINDINGS.md` — cross-cut notes on val→test transfer and repeatedly-hit traps
-- `rangeview_legacy/` — every exploratory Python script from the session
-- `rangeview_originals/` — untouched copies of the migrated files
-- `legacy_shell_scripts/`, `legacy_results/`, `legacy_logs/`, `legacy_artifacts/` — supporting output from those scripts
-
-The main flow above only keeps what shipped in the winning submission.
+The `experiments/` session log (HANDOFF / FINDINGS / legacy scripts) is **not** part of this snapshot. The tree above is the winning-submission path only.

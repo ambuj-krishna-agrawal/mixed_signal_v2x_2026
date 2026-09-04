@@ -299,10 +299,20 @@ class RangeViewFusionNet(nn.Module):
         self.agent_order = AGENT_ORDER
         self.agent_gamma = nn.Parameter(torch.zeros(len(AGENT_ORDER), feat))
         self.agent_beta = nn.Parameter(torch.zeros(len(AGENT_ORDER), feat))
-        # use_vfe=False reproduces the pre-PillarVFE architecture, so
-        # checkpoints trained before it can still be loaded and A/B'd.
-        from pillar_vfe import PillarVFE
-        self.vfe = PillarVFE(cin=feat, cout=pillar_feat) if use_vfe else None
+        # use_vfe=False is the shipped recipe (PillarVFE was a wash and is not
+        # in this tree). Import only when requested so --no-vfe still constructs.
+        if use_vfe:
+            try:
+                from pillar_vfe import PillarVFE
+            except ImportError as e:
+                raise ImportError(
+                    "PillarVFE is not included in this repository. Use --no-vfe "
+                    "(the documented winning recipe). The VFE path was measured "
+                    "as a wash and is not required for the 0.84+ models."
+                ) from e
+            self.vfe = PillarVFE(cin=feat, cout=pillar_feat)
+        else:
+            self.vfe = None
         self.bev_ch = pillar_feat if use_vfe else feat
         self.backbone = BEVBackbone(cin=self.bev_ch, cout=128,
                                     ms_fusion=ms_fusion)
