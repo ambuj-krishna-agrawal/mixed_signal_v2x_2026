@@ -9,6 +9,33 @@ Best test-set mAP achieved: **0.8524** (V=0.8646, B=0.8198, P=0.8727) via per-cl
 
 ---
 
+## Experiment variants (this branch only)
+
+Branch `experiments/range-attn-zceil-ped-heatmap` adds
+[`experiments/rangeview_variants/`](experiments/rangeview_variants/) — a
+standalone snapshot of three architecture experiments. **`src/rangeview/` is
+unmodified by this branch.**
+
+| experiment | flag | val mAP (31/34, +RSU+ccNMS) | vs baseline |
+|---|---|---|---|
+| baseline ep7 | — | 0.8468 | — |
+| range-adaptive attention | `--attn` | 0.8431 | −0.0037 (Pedestrian +0.0089) |
+| z-ceiling + separate Pedestrian head | `--z-ceiling -0.8 --hires 3` | **0.8517** | **+0.0049** (Pedestrian +0.0283) |
+
+The z-ceiling and Pedestrian-head changes were trained together and have never
+been ablated apart, so the Pedestrian gain cannot be attributed to either alone.
+Range attention is a net loss that degraded from epoch 6 to 7.
+
+These files use flat imports, `torch_scatter`, and the OpenCOOD CUDA IoU kernels
+directly — all of which `src/rangeview/` deliberately replaced with
+`rangeview.compat` shims. **Integrating means porting the deltas, not copying
+the files over the package.** See
+[`experiments/rangeview_variants/README.md`](experiments/rangeview_variants/README.md)
+for per-class results, the dependency gaps, and the hardcoded paths that need
+repointing.
+
+---
+
 ## Setup
 
 ```bash
@@ -219,3 +246,7 @@ train pred+features ─► refiner.refiner train ─► refiner_ckpts_*.pt  ─�
 ```
 
 The `experiments/` session log (HANDOFF / FINDINGS / legacy scripts) is **not** part of this snapshot. The tree above is the winning-submission path only.
+
+> On branch `experiments/range-attn-zceil-ped-heatmap` this is one exception:
+> `experiments/rangeview_variants/` **is** committed. It sits outside the
+> submission path above and nothing in `src/` imports it.
